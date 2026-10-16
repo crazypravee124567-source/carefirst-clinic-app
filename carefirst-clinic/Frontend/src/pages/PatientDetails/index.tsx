@@ -1,6 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { api } from "../../utils/api";
 import { CLINIC_CONFIG, getDynamicDates } from "../../utils/appointmentData";
+import { readDraft, writeDraft, clearDraft, type BookingDraft } from "../../utils/bookingDraft";
 
 // What the DateTime page saved in sessionStorage when you pressed Continue.
 interface BookingChoice {
@@ -50,6 +51,23 @@ export default function PatientDetails() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
 
+  // Persist the in-progress patient form state to localStorage so a refresh
+  // mid-booking doesn't wipe the name/phone/toggle the patient already typed.
+  useEffect(() => {
+    const draft = readDraft();
+    if (draft.name != null) setFullName(draft.name);
+    if (draft.phone != null) setPhone(draft.phone);
+    if (draft.forMyself != null) setForMyself(draft.forMyself);
+  }, []);
+
+  const persistForm = () => {
+    writeDraft({ name: fullName, phone, forMyself });
+  };
+
+  useEffect(() => {
+    persistForm();
+  }, [fullName, phone, forMyself]);
+
   // POST the booking, then hand the response to the Confirmed page.
   const handleSubmit = async () => {
     const name = fullName.trim();
@@ -84,6 +102,9 @@ export default function PatientDetails() {
       });
       // The Confirmed page reads this key as soon as it mounts
       sessionStorage.setItem("lastBooking", JSON.stringify(appointment));
+      // Clear the in-progress draft once the booking succeeded — a completed
+      // booking shouldn't linger as a stale "draft" that resurrects on refresh.
+      clearDraft();
       window.location.hash = "#/confirmed"; // what data-go used to do for us
       window.scrollTo({ top: 0 });
     } catch (e) {

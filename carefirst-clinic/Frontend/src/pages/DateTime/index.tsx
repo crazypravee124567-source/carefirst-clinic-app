@@ -5,6 +5,8 @@ import { CLINIC_CONFIG } from "../../utils/appointmentData";
 const DOCTOR_KEY = "selectedDoctorId";
 const CHOICE_KEY = "bookingChoice"; // saved for PatientDetails on Continue
 
+import { readDraft, writeDraft } from "../../utils/bookingDraft";
+
 // "14:30" -> "2:30 PM"  (backend speaks 24h, screens speak 12h)
 const to12h = (t: string): string => {
   const [h, m] = t.split(":").map(Number);
@@ -63,13 +65,25 @@ export default function DateTime() {
 
   // Phase 1: which doctor + this month's day-by-day availability
   useEffect(() => {
-    const id = Number(sessionStorage.getItem(DOCTOR_KEY) ?? "1");
+    const sessionDoctorId = Number(sessionStorage.getItem(DOCTOR_KEY) ?? "1");
     const now = new Date();
     const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
-    Promise.all([api.getDoctors({}), api.getAvailability(id, month)])
+    Promise.all([api.getDoctors({}), api.getAvailability(sessionDoctorId, month)])
       .then(([all, days]) => {
-        setDoctor(all.find((d) => d.id === id) ?? null);
+        const doctorsById = new Map(all.map((d) => [d.id, d]));
+
+        // Prefer the in-progress draft's doctor if it's in the live list,
+        // otherwise fall back to the session/selected doctor (also kept in
+        // sessionStorage by DoctorCard / FeaturedDoctorCard).
+        const draft = readDraft();
+        const chosenDoctorId =
+          draft.doctorId != null && doctorsById.has(draft.doctorId)
+            ? draft.doctorId
+            : sessionDoctorId;
+        const chosenDoctor = doctorsById.get(chosenDoctorId) ?? null;
+        setDoctor(chosenDoctor);
+
         setDates(
           days.map((day) => ({
             val: day.date,
@@ -80,8 +94,20 @@ export default function DateTime() {
             disabled: day.past,
           }))
         );
-        const firstOpen = days.find((x) => !x.past && x.availableSlots > 0);
-        setSelectedDate(firstOpen ? firstOpen.date : localIso(new Date()));
+
+        // If there's a saved draft date for this doctor, keep it; otherwise
+        // pick the first non-past day that has a free slot.
+        if (draft.date != null && doctorsById.has(chosenDoctorId)) {
+          setDaySlots({
+            morning: [],
+            afternoon: [],
+            evening: [],
+          });
+          setSelectedDate(draft.date);
+        } else {
+          const firstOpen = days.find((x) => !x.past && x.availableSlots > 0);
+          setSelectedDate(firstOpen ? firstOpen.date : localIso(new Date()));
+        }
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
@@ -98,10 +124,12 @@ export default function DateTime() {
           afternoon: day.afternoon.map(toSlotView),
           evening: day.evening.map(toSlotView),
         });
-        const firstFree = [...day.morning, ...day.afternoon, ...day.evening].find(
-          (s) => s.available
-        );
-        setSelectedTime(firstFree ? to12h(firstFree.time) : "");
+
+        // If there's a saved draft time for this exact date, keep it so a
+        // refresh mid-booking doesn't drop the selected slot.
+        const draft = readDraft();
+        const draftMatchesThisDate = draft.date === selectedDate && draft.time12 != null;
+        setSelectedTime(draftMatchesThisDate ? (draft.time12 as string) : "");
       })
       .catch((e: Error) => setError(e.message));
   }, [selectedDate]);
@@ -109,6 +137,23 @@ export default function DateTime() {
   const morningSlots = daySlots.morning;
   const afternoonSlots = daySlots.afternoon;
   const eveningSlots = daySlots.evening;
+
+  // Persist the slot choice to localStorage every time the user lands on a
+  // selected date+time so a refresh doesn't lose the in-progress pick.
+  useEffect(() => {
+    if (!selectedTime || !doctor) return;
+    writeDraft({
+      doctorId: doctor.id,
+      doctorName: doctor.name,
+      title: doctor.title,
+      departmentName: doctor.departmentName,
+      room: doctor.room,
+      date: selectedDate,
+      time24: to24h(selectedTime),
+      time12: selectedTime,
+      fee: doctor.consultationFee,
+    });
+  }, [doctor, selectedDate, selectedTime]);
 
   return (
     <div className="flex flex-col bg-white min-h-screen">
@@ -624,7 +669,8 @@ export default function DateTime() {
                                <button
                   data-go="patient"
                   disabled={!selectedTime}
-                  onClick={() =>
+                  onClick={() => {
+                    // Keep the legacy sessionStorage handoff for the Confirmed flow
                     sessionStorage.setItem(
                       "bookingChoice",
                       JSON.stringify({
@@ -638,8 +684,21 @@ export default function DateTime() {
                         time12: selectedTime,
                         fee: doctor?.consultationFee,
                       })
-                    )
-                  }
+                    );
+                    // Also persist the in-progress draft so a refresh before
+                    // submitting doesn't wipe the chosen slot.
+                    writeDraft({
+                      doctorId: doctor?.id,
+                      doctorName: doctor?.name,
+                      title: doctor?.title,
+                      departmentName: doctor?.departmentName,
+                      room: doctor?.room,
+                      date: selectedDate,
+                      time24: to24h(selectedTime),
+                      time12: selectedTime,
+                      fee: doctor?.consultationFee,
+                    });
+                  }}
                   className="flex justify-center items-center self-stretch bg-[#005C55] hover:bg-[#004A44] transition-colors text-white py-3 px-4 gap-[9px] rounded-xl border-0 cursor-pointer shadow-md disabled:opacity-50"
                 >
                   <span className="text-white text-base font-bold">

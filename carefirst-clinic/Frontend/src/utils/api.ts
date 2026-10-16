@@ -77,6 +77,9 @@ export interface Appointment {
   patientPhone: string;
   status: string;     // "BOOKED" | "CANCELLED"
   createdAt: string;
+  ratingAverage: number;
+  address: string;
+  district: string;
 }
 
 // ---- One shared request function: handles JSON + errors in ONE place ----
