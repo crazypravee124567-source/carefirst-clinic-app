@@ -1,5 +1,8 @@
 // Central API client. Every page talks to the backend ONLY through this file.
-const API_BASE = "http://localhost:8081";
+// In production (Vercel) set VITE_API_BASE at build time to the Render backend
+// URL, e.g. https://carefirst-backend.onrender.com — no trailing slash.
+// Locally it falls back to the dev backend on port 8081.
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8081";
 
 // ---- Types: these mirror the backend DTOs EXACTLY (field names = JSON keys) ----
 

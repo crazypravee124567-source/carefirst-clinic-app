@@ -1,0 +1,40 @@
+# Render Blueprint: production backend + managed PostgreSQL.
+# Dashboard -> New -> Blueprint -> pick this repo. Render reads this file.
+# Docs: https://render.com/docs/blueprint-spec
+databases:
+  - name: carefirst-db
+    databaseName: carefirst
+    user: carefirst
+    plan: free
+
+services:
+  - type: web
+    name: carefirst-backend
+    runtime: java
+    plan: free
+    rootDir: carefirst-clinic/backend/backend
+    # mvnw is committed without the Linux exec bit (developed on Windows),
+    # so chmod it before running. Skips tests: CI already runs them.
+    buildCommand: "chmod +x mvnw && ./mvnw -DskipTests clean package"
+    startCommand: "java -jar target/backend-0.0.1-SNAPSHOT.jar --server.port=$PORT"
+    healthCheckPath: /api/health
+    envVars:
+      # Spring profiles: dev (localhost Postgres) / prod (env-driven config)
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod
+      # JDK 21 required (pom targets Java 21)
+      - key: JAVA_VERSION
+        value: "21"
+      # Fill these three from the carefirst-db page after the first deploy:
+      #   DB_URL must use the JDBC scheme, e.g.
+      #   jdbc:postgresql://<db-host>:5432/carefirst
+      - key: DB_URL
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      # Exact origin of the Vercel frontend, e.g. https://<site>.vercel.app
+      # (used by the backend CORS config)
+      - key: FRONTEND_URL
+        sync: false

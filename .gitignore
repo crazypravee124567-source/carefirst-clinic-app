@@ -31,3 +31,11 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Local git backup of the previously nested backend repo ###
+/carefirst-clinic/backend/backend-git-backup/
+
+### Environment / secrets (keep examples only) ###
+.env
+.env.*
+!.env.example
